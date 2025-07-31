@@ -16,7 +16,7 @@ metadata:
   name: tag-validation-webhook-clusterrolebinding
 subjects:
   - kind: ServiceAccount
-    name: your-sa-name
+    name: tag-validation-webhook-sa
     namespace: default
 roleRef:
   kind: ClusterRole

@@ -6,11 +6,11 @@ webhooks:
   - name: tag-validation-webhook.default.svc
     admissionReviewVersions: ["v1"]
     namespaceSelector: {}
-    objectSelector: {
-        # 只检查 deployment 和 statefulset
-        matchExpressions:
-          [{ key: kind, operator: In, values: [Deployment, StatefulSet] }],
-      }
+    # objectSelector:
+    #   {
+    #     matchExpressions:
+    #       [{ key: kind, operator: In, values: [Deployment, StatefulSet] }],
+    #   }
     sideEffects: None
     rules:
       - operations: ["UPDATE"]

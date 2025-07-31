@@ -74,7 +74,7 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 				}
 			}
 		} else {
-				ctrllog.Log.V(1).Info("helm.sh/timestamp not found", "deploy", newObj.GetName())
+			ctrllog.Log.V(1).Info("annotation helm.sh/timestamp not found", "deploy", newObj.GetName())
 		}
 
 	case "StatefulSet":
@@ -102,7 +102,7 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 				}
 			}
 		} else {
-				ctrllog.Log.V(1).Info("helm.sh/timestamp not found", "deploy", newObj.GetName())
+			ctrllog.Log.V(1).Info("annotation helm.sh/timestamp not found", "sts", newObj.GetName())
 		}
 	}
 	if !isHelmAction {
@@ -119,13 +119,14 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 		patchStr := fmt.Sprintf(`[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"%s"}]`, oldImg)
 		var patchOps []jsonpatch.JsonPatchOperation
 		if err := json.Unmarshal([]byte(patchStr), &patchOps); err == nil {
-			ctrllog.Log.V(1).Info("helm.sh/timestamp not found", "patch", patchOps)
+			ctrllog.Log.V(1).Info("image rollback blocked", "hold with old patchOps", patchOps)
 			return admission.Patched("image rollback blocked", patchOps...)
 		} else {
 			ctrllog.Log.V(1).Info("failed to create patch", "patch", patchOps)
 			return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to create patch: %w", err))
 		}
 	}
+	ctrllog.Log.V(1).Info("image rollback allowed", "patch with new patchOps", patchOps)
 	return admission.Allowed("image updated")
 }
 
