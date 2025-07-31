@@ -70,11 +70,11 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 				if time.Since(parsed) < 60*time.Second {
 					isHelmAction = true
 				} else {
-					ctrllog.Log.V(1).Info("not a helm upgrade action, bypass this request", "deploy", newObj.GetName())
+					ctrllog.Log.V(1).Info("not a helm upgrade action, bypass this request", "deploy", newObj.GetName(), "oldImg: ", oldImg, " ==> newImg: ", newImg)
 				}
 			}
 		} else {
-			ctrllog.Log.V(1).Info("annotation helm.sh/timestamp not found", "deploy", newObj.GetName())
+			ctrllog.Log.V(1).Info("annotation helm.sh/timestamp not found, bypass this request", "deploy", newObj.GetName(), "oldImg: ", oldImg, " ==> newImg: ", newImg)
 		}
 
 	case "StatefulSet":
@@ -98,11 +98,11 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 				if time.Since(parsed) < 60*time.Second {
 					isHelmAction = true
 				} else {
-					ctrllog.Log.V(1).Info("not a helm upgrade action, bypass this request", "sts", newObj.GetName())
+					ctrllog.Log.V(1).Info("not a helm upgrade action, bypass this request", "sts", newObj.GetName(), "oldImg: ", oldImg, "newImg: ", newImg)
 				}
 			}
 		} else {
-			ctrllog.Log.V(1).Info("annotation helm.sh/timestamp not found", "sts", newObj.GetName())
+			ctrllog.Log.V(1).Info("annotation helm.sh/timestamp not found, bypass this request", "sts", newObj.GetName(), "oldImg: ", oldImg, " ==> newImg: ", newImg)
 		}
 	}
 	if !isHelmAction {
@@ -119,14 +119,14 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 		patchStr := fmt.Sprintf(`[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"%s"}]`, oldImg)
 		var patchOps []jsonpatch.JsonPatchOperation
 		if err := json.Unmarshal([]byte(patchStr), &patchOps); err == nil {
-			ctrllog.Log.V(1).Info("image rollback blocked", "hold with old patchOps", patchOps)
+			ctrllog.Log.V(1).Info("image rollback blocked", "hold with old image", "oldImg: ", oldImg, " <== newImg: ", newImg)
 			return admission.Patched("image rollback blocked", patchOps...)
 		} else {
-			ctrllog.Log.V(1).Info("failed to create patch", "patch", patchOps)
+			ctrllog.Log.V(1).Info("failed to create patch", "oldImg: ", oldImg, "newImg: ", newImg)
 			return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to create patch: %w", err))
 		}
 	}
-	ctrllog.Log.V(1).Info("image rollback allowed", "patch with new patchOps", patchOps)
+	ctrllog.Log.V(1).Info("image updated", "oldImg: ", oldImg, " ==> newImg: ", newImg)
 	return admission.Allowed("image updated")
 }
 
