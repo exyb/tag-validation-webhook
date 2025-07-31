@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tag-validation-webhook
+spec:
+  selector:
+    app: tag-validation-webhook
+  ports:
+    - port: 443
+      targetPort: 8443
+

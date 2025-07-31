@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tag-validation-webhook-config
+  namespace: default
+data:
+  enableMutation: "true"
+  namespaced: "all" # Namespace to watch, can be set to "all" for cluster scope
+

@@ -1,0 +1,30 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: tag-validation-webhook
+webhooks:
+  - name: tag-validation-webhook.default.svc
+    admissionReviewVersions: ["v1"]
+    namespaceSelector: {}
+    objectSelector: {
+        # 只检查 deployment 和 statefulset
+        matchExpressions:
+          [{ key: kind, operator: In, values: [Deployment, StatefulSet] }],
+      }
+    sideEffects: None
+    rules:
+      - operations: ["UPDATE"]
+        apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        resources: ["deployments", "statefulsets"]
+        scope: "Namespaced"
+    clientConfig:
+      # url: https://192.168.243.1:8443/mutate
+      service:
+        namespace: default
+        name: tag-validation-webhook
+        path: /mutate
+        port: 443
+      caBundle: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJkakNDQVJ5Z0F3SUJBZ0lSQUsyRGxaUFR3Y25wVVpUakZ5eVYvdEl3Q2dZSUtvWkl6ajBFQXdJd0R6RU4KTUFzR0ExVUVDaE1FYm1sc01UQWdGdzB5TlRBM01qTXdOalU0TlRWYUdBOHlNVEkxTURZeU9UQTJOVGcxTlZvdwpEekVOTUFzR0ExVUVDaE1FYm1sc01UQlpNQk1HQnlxR1NNNDlBZ0VHQ0NxR1NNNDlBd0VIQTBJQUJDS2ZIcmVGCnY3YUQ4dzVxcFZaek11QW9ud0lYVkd5RVdiQnhtVTFiOFN6V04wYzUxb2hRelhYWGs5ek9ucFJHSU1DaFFvVXUKdE9Md0o5bSt4K2lCMjRHalZ6QlZNQTRHQTFVZER3RUIvd1FFQXdJQ0JEQVRCZ05WSFNVRUREQUtCZ2dyQmdFRgpCUWNEQVRBUEJnTlZIUk1CQWY4RUJUQURBUUgvTUIwR0ExVWREZ1FXQkJUWUNGL3Y1M0UwYlJ2SkZsdWV1U2ZvCkhOVUl6VEFLQmdncWhrak9QUVFEQWdOSUFEQkZBaUJ1MzkrbTBLVUUvY2dVUldpUFdpWEhVbC9rTlg5d3d4SUsKblo3dEFTekV3UUloQUt1NHcyS29NZURlZi84VmQwYWs1QnBvUmtKVkdZNWFiUmVKUloyTnh6ejcKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=
+    failurePolicy: Ignore
+    matchPolicy: Equivalent
