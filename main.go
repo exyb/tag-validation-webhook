@@ -37,7 +37,7 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 		return admission.Allowed("mutation disabled by ConfigMap")
 	}
 	if !slices.Contains(watchedNamespaces, req.Namespace) && watchNamespace != "all" {
-		ctrllog.Log.V(1).Info("mutation disabled by ConfigMap")
+		ctrllog.Log.V(1).Info("not in watch namespace", "reqNamespace", req.Namespace)
 		return admission.Allowed("not in watch namespace")
 	}
 	if req.Kind.Kind != "Deployment" && req.Kind.Kind != "StatefulSet" {
@@ -179,7 +179,7 @@ func init() {
 	flag.StringVar(&certFile, "tls-cert-file", "/certs/cert", "TLS cert")
 	flag.StringVar(&keyFile, "tls-key-file", "/certs/key", "TLS key")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
-	flag.StringVar(&watchNamespace, "namespaced", "default", "Namespace to watch. Use 'all' for cluster scope.")
+	flag.StringVar(&watchNamespace, "namespaced", "all", "Namespace to watch. Use 'all' for cluster scope.")
 	flag.StringVar(&logLevel, "log-level", "info", "日志级别，可选: debug, info, warn, error")
 }
 func getKubeClient(kubeconfig string) (*kubernetes.Clientset, error) {
