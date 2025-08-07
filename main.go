@@ -33,7 +33,7 @@ type webhookHandler struct {
 }
 
 func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
-	ctrllog.Log.V(1).Info("收到请求", "用户", req.UserInfo.Username)
+	// ctrllog.Log.V(1).Info("收到请求", "用户", req.UserInfo.Username)
 	if !h.mutationEnabledFromConfigMap() {
 		return admission.Allowed("mutation disabled by ConfigMap")
 	}
@@ -157,6 +157,7 @@ func (h *webhookHandler) isImageRollback(oldImg, newImg string) bool {
 		lowerMatch, _ := regexp.MatchString(lowerRe, oldTag)
 		greaterMatch, _ := regexp.MatchString(greaterRe, newTag)
 		if lowerMatch && greaterMatch {
+			ctrllog.Log.V(1).Info("matched rule: custom regexp", "lowerMatch", lowerMatch, "greaterMatch", greaterMatch)
 			return true // old < new，视为回滚
 		}
 	}
@@ -165,15 +166,18 @@ func (h *webhookHandler) isImageRollback(oldImg, newImg string) bool {
 	oldTs := extractTimestamp(oldTag)
 	newTs := extractTimestamp(newTag)
 	if oldTs != "" && newTs != "" {
+		ctrllog.Log.V(1).Info("matched rule: timestamp in name", "oldTs", oldTs, "newTs", newTs)
 		return newTs < oldTs
 	}
 
 	// 3. semver 比较
 	if isSemverRollback(oldImg, newImg) {
+		ctrllog.Log.V(1).Info("matched rule: semver", "oldImg", oldImg, "newImg", newImg)
 		return true
 	}
 
 	// 4. 普通字符串比较
+	ctrllog.Log.V(1).Info("matched rule: fallback - ascii", "oldTag", oldTag, "newTag", newTag)
 	return newTag < oldTag
 }
 
