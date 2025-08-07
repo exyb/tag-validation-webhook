@@ -5,5 +5,7 @@ metadata:
   namespace: default
 data:
   enableMutation: "true"
+  # 新增自定义tag比较规则，支持正则表达式
+  #lower-tag-regexp: dev_.*
+  #greater-tag-regexp: release_.*
   namespaced: "all" # Namespace to watch, can be set to "all" for cluster scope
-

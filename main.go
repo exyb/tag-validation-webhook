@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -28,7 +29,7 @@ import (
 
 type webhookHandler struct {
 	decoder admission.Decoder
-	client  *kubernetes.Clientset
+	client  kubernetes.Interface
 }
 
 func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
@@ -37,7 +38,7 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 		return admission.Allowed("mutation disabled by ConfigMap")
 	}
 	if !slices.Contains(watchedNamespaces, req.Namespace) && watchNamespace != "all" {
-		ctrllog.Log.V(1).Info("mutation disabled by ConfigMap")
+		ctrllog.Log.V(1).Info("not in watch namespace", "reqNamespace", req.Namespace)
 		return admission.Allowed("not in watch namespace")
 	}
 	if req.Kind.Kind != "Deployment" && req.Kind.Kind != "StatefulSet" {
@@ -70,11 +71,11 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 				if time.Since(parsed) < 60*time.Second {
 					isHelmAction = true
 				} else {
-					ctrllog.Log.V(1).Info("not a helm upgrade action, bypass this request", "deploy", newObj.GetName(), "oldImg: ", oldImg, " ==> newImg: ", newImg)
+					ctrllog.Log.V(1).Info("not a helm upgrade action, bypass this request", "deploy", newObj.GetName(), "oldImg", oldImg, "newImg", newImg)
 				}
 			}
 		} else {
-			ctrllog.Log.V(1).Info("annotation helm.sh/timestamp not found, bypass this request", "deploy", newObj.GetName(), "oldImg: ", oldImg, " ==> newImg: ", newImg)
+			ctrllog.Log.V(1).Info("annotation helm.sh/timestamp not found, bypass this request", "deploy", newObj.GetName(), "oldImg", oldImg, "newImg", newImg)
 		}
 
 	case "StatefulSet":
@@ -98,11 +99,11 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 				if time.Since(parsed) < 60*time.Second {
 					isHelmAction = true
 				} else {
-					ctrllog.Log.V(1).Info("not a helm upgrade action, bypass this request", "sts", newObj.GetName(), "oldImg: ", oldImg, "newImg: ", newImg)
+					ctrllog.Log.V(1).Info("not a helm upgrade action, bypass this request", "sts", newObj.GetName(), "oldImg", oldImg, "newImg", newImg)
 				}
 			}
 		} else {
-			ctrllog.Log.V(1).Info("annotation helm.sh/timestamp not found, bypass this request", "sts", newObj.GetName(), "oldImg: ", oldImg, " ==> newImg: ", newImg)
+			ctrllog.Log.V(1).Info("annotation helm.sh/timestamp not found, bypass this request", "sts", newObj.GetName(), "oldImg", oldImg, "newImg", newImg)
 		}
 	}
 	if !isHelmAction {
@@ -111,28 +112,74 @@ func (h *webhookHandler) Handle(ctx context.Context, req admission.Request) admi
 
 	// log.Printf("received image request from %s", req.UserInfo.Username)
 
-	if isImageRollback(oldImg, newImg) {
-		// patch, _ := jsonpatch.CreatePatch(
-		// 	[]byte(fmt.Sprintf("{\"image\":\"%s\"}", newImg)),
-		// 	[]byte(fmt.Sprintf("{\"image\":\"%s\"}", oldImg)),
-		// )
+	if h.isImageRollback(oldImg, newImg) {
 		patchStr := fmt.Sprintf(`[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"%s"}]`, oldImg)
 		var patchOps []jsonpatch.JsonPatchOperation
 		if err := json.Unmarshal([]byte(patchStr), &patchOps); err == nil {
-			ctrllog.Log.V(1).Info("image rollback blocked", "hold with old image", "oldImg: ", oldImg, " <== newImg: ", newImg)
+			ctrllog.Log.V(1).Info("image rollback blocked", "holdWithOldImage", true, "oldImg", oldImg, "newImg", newImg)
 			return admission.Patched("image rollback blocked", patchOps...)
 		} else {
-			ctrllog.Log.V(1).Info("failed to create patch", "oldImg: ", oldImg, "newImg: ", newImg)
+			ctrllog.Log.V(1).Info("failed to create patch", "oldImg", oldImg, "newImg", newImg)
 			return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to create patch: %w", err))
 		}
 	}
-	ctrllog.Log.V(1).Info("image updated", "oldImg: ", oldImg, " ==> newImg: ", newImg)
+	ctrllog.Log.V(1).Info("image updated", "oldImg", oldImg, "newImg", newImg)
 	return admission.Allowed("image updated")
 }
 
-func isImageRollback(oldImg, newImg string) bool {
-	return (extractTag(newImg) < extractTag(oldImg)) || isSemverRollback(oldImg, newImg)
+// 提取tag中的时间戳（如 dev_20250806213400），返回时间戳字符串，失败返回空
+func extractTimestamp(tag string) string {
+	re := regexp.MustCompile(`(\d{14})`)
+	match := re.FindStringSubmatch(tag)
+	if len(match) > 1 {
+		return match[1]
+	}
+	return ""
 }
+
+// 读取ConfigMap中的自定义tag比较规则
+func getTagCompareRegexps(client kubernetes.Interface) (string, string) {
+	cm, err := client.CoreV1().ConfigMaps("default").Get(context.TODO(), "tag-validation-webhook-config", metav1.GetOptions{})
+	if err != nil {
+		return "", ""
+	}
+	return cm.Data["lower-tag-regexp"], cm.Data["greater-tag-regexp"]
+}
+
+// 判断镜像tag是否回滚，优先级：自定义规则 > 时间戳 > semver > 普通字符串
+func (h *webhookHandler) isImageRollback(oldImg, newImg string) bool {
+	oldTag := extractTag(oldImg)
+	newTag := extractTag(newImg)
+
+	// 1. 自定义正则规则
+	lowerRe, greaterRe := getTagCompareRegexps(h.client)
+	if lowerRe != "" && greaterRe != "" {
+		lowerMatch, _ := regexp.MatchString(lowerRe, oldTag)
+		greaterMatch, _ := regexp.MatchString(greaterRe, newTag)
+		if lowerMatch && greaterMatch {
+			return true // old < new，视为回滚
+		}
+	}
+
+	// 2. 时间戳比较
+	oldTs := extractTimestamp(oldTag)
+	newTs := extractTimestamp(newTag)
+	if oldTs != "" && newTs != "" {
+		return newTs < oldTs
+	}
+
+	// 3. semver 比较
+	if isSemverRollback(oldImg, newImg) {
+		return true
+	}
+
+	// 4. 普通字符串比较
+	return newTag < oldTag
+}
+
+/*
+原 isImageRollback 已被 webhookHandler 的方法替代
+*/
 
 func isSemverRollback(oldImg, newImg string) bool {
 	oldTag := extractTag(oldImg)
@@ -179,7 +226,7 @@ func init() {
 	flag.StringVar(&certFile, "tls-cert-file", "/certs/cert", "TLS cert")
 	flag.StringVar(&keyFile, "tls-key-file", "/certs/key", "TLS key")
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
-	flag.StringVar(&watchNamespace, "namespaced", "default", "Namespace to watch. Use 'all' for cluster scope.")
+	flag.StringVar(&watchNamespace, "namespaced", "all", "Namespace to watch. Use 'all' for cluster scope.")
 	flag.StringVar(&logLevel, "log-level", "info", "日志级别，可选: debug, info, warn, error")
 }
 func getKubeClient(kubeconfig string) (*kubernetes.Clientset, error) {

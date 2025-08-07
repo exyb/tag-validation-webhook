@@ -17,7 +17,7 @@ spec:
       serviceAccountName: tag-validation-webhook-sa
       containers:
         - name: webhook
-          image: example.com/public/tag-validation-webhook:dev_20250731182730
+          image: harbor.example.com/public/tag-validation-webhook:dev_20250807110838
           imagePullPolicy: IfNotPresent
           command:
             - /root/webhook
